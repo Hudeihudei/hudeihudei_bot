@@ -357,9 +357,21 @@ async def main():
     )
 
 # ====== Application ======
-async def main():
-    assert BOT_TOKEN, "Set BOT_TOKEN env var"
+
+# Асинхронная инициализация перед стартом polling
+async def _post_init(application: Application):
     await init_db()
+    # можно послать себе пинг-уведомление о старте (если хочешь):
+    for admin_id in ADMIN_IDS:
+        try:
+            await application.bot.send_message(admin_id, "HUDEI HUDEI BOT запущен ✅")
+        except Exception:
+            pass
+
+def main():
+    assert BOT_TOKEN, "Set BOT_TOKEN env var"
+
+    # Загружаем контент-план из posts.txt (синхронно)
     load_posts()
 
     app: Application = (
@@ -382,19 +394,18 @@ async def main():
     app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
     app.add_handler(CommandHandler("broadcast", broadcast))
 
-    # Расписание
+    # Ежедневные посты в канал/подписчицам
     app.job_queue.run_daily(job_morning, time(hour=8,  minute=0,  tzinfo=TZ), name="morning_post")
     app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
     app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
 
-    # ОДИН запуск polling. ВАЖНО: close_loop=False
-    await app.run_polling(
+    # Единственный корректный запуск polling (PTB сам управляет event loop)
+    app.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True,
         stop_signals=None,
-        close_loop=False,
+        post_init=_post_init,   # <- асинхронная инициализация БД здесь
     )
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
