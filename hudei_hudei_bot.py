@@ -380,16 +380,16 @@ async def _post_init(application: Application):
 def main():
     assert BOT_TOKEN, "Set BOT_TOKEN env var"
 
-    # Загружаем контент-план из posts.txt (синхронно)
+    # Загружаем контент-план
     load_posts()
 
     app: Application = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
         .rate_limiter(AIORateLimiter())
+        .post_init(_post_init)
         .build()
     )
-
     # Хэндлеры
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
