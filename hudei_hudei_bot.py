@@ -377,10 +377,23 @@ async def _post_init(application: Application):
         except Exception:
             pass
 
+# ====== Application ======
+
+# Асинхронная инициализация перед стартом polling
+async def _post_init(application: Application):
+    await init_db()
+    # можно послать себе пинг-уведомление о старте (если хочешь):
+    for admin_id in ADMIN_IDS:
+        try:
+            await application.bot.send_message(admin_id, "HUDEI HUDEI BOT запущен ✅")
+        except Exception:
+            pass
+
+
 def main():
     assert BOT_TOKEN, "Set BOT_TOKEN env var"
 
-    # Загружаем контент-план
+    # Загружаем контент-план из posts.txt (синхронно)
     load_posts()
 
     app: Application = (
@@ -390,6 +403,7 @@ def main():
         .post_init(_post_init)
         .build()
     )
+
     # Хэндлеры
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -404,17 +418,18 @@ def main():
     app.add_handler(CommandHandler("broadcast", broadcast))
 
     # Ежедневные посты в канал/подписчицам
-    app.job_queue.run_daily(job_morning, time(hour=8,  minute=0,  tzinfo=TZ), name="morning_post")
-    app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
+    app.job_queue.run_daily(job_morning, time(hour=8, minute=0, tzinfo=TZ), name="morning_post")
+    app.job_queue.run_daily(job_day, time(hour=12, minute=0, tzinfo=TZ), name="day_post")
     app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
 
-    # Единственный корректный запуск polling (PTB сам управляет event loop)
+    # Единственный корректный запуск polling
     app.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True,
         stop_signals=None,
-        post_init=_post_init,   # <- асинхронная инициализация БД здесь
+        close_loop=False,
     )
+
 
 if __name__ == "__main__":
     main()
