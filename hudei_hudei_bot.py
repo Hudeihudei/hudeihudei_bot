@@ -195,13 +195,6 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
     await update.message.reply_text("Рассылка завершена ✅")
 
-async def job_evening(context: ContextTypes.DEFAULT_TYPE):
-    for uid in await get_subscribed_users():
-        try:
-            await context.bot.send_message(chat_id=uid, text=EVENING_POST, parse_mode=ParseMode.MARKDOWN)
-        except Exception:
-            pass
-
 async def main():
     assert BOT_TOKEN, "⚠️ Переменная BOT_TOKEN не установлена!"
     await init_db()
