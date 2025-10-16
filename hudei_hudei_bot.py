@@ -5,7 +5,7 @@ Features:
 - /start onboarding with welcome & rules
 - Main menu buttons: Share Story, Rules, Unsubscribe
 - Story submission flow (admin approval)
-- Admin panel: approve/reject stories, broadcast
+- Admin actions: approve/reject, broadcast
 - Daily posts (Morning / Day / Evening) from posts.txt
 - SQLite storage (users, stories)
 - Works with python-telegram-bot v21+
@@ -14,7 +14,6 @@ Features:
 from __future__ import annotations
 import os
 import logging
-import asyncio
 import aiosqlite
 import re
 from datetime import time, datetime
@@ -29,7 +28,6 @@ from telegram import (
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
-from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -56,7 +54,7 @@ CHANNEL_ID: Optional[str] = os.getenv("CHANNEL_ID")  # e.g. "@hudeihudei"
 TZ = ZoneInfo("Europe/Vilnius")
 DB_PATH = os.getenv("DB_PATH", "hudei_bot.sqlite3")
 
-# ====== Constants & States ======
+# ====== States & Buttons ======
 MENU, STORY = range(2)
 BTN_SHARE = "Поделиться историей"
 BTN_RULES = "Правила"
@@ -135,10 +133,17 @@ async def set_story_status(story_id: int, status: str):
         await db.execute("UPDATE stories SET status=? WHERE id=?", (status, story_id))
         await db.commit()
 
-# ====== POSTS PARSER ======
+# ====== posts.txt PARSER ======
 POSTS = {"morning": [], "day": [], "evening": []}
 
 def load_posts(path: str = "posts.txt"):
+    """
+    Читает posts.txt и наполняет POSTS словарём списков:
+    POSTS['morning' | 'day' | 'evening'] = [text, ...]
+    Формат блоков:
+    # Day 1 Morning
+    ...текст...
+    """
     global POSTS
     POSTS = {"morning": [], "day": [], "evening": []}
     try:
@@ -157,12 +162,13 @@ def load_posts(path: str = "posts.txt"):
             POSTS[k] = [f"{k.title()} post placeholder. Добавь содержимое в posts.txt"]
     log.info(f"Loaded posts: morning={len(POSTS['morning'])}, day={len(POSTS['day'])}, evening={len(POSTS['evening'])}")
 
-def day_index_by_date():
+def day_index_by_date() -> int:
     now = datetime.now(TZ)
     first = datetime(now.year, now.month, 1, tzinfo=TZ)
     return (now - first).days
 
 def target_chat_id_fallback():
+    # Если указан канал — публикуем в канал; иначе — личная рассылка подписчицам
     return CHANNEL_ID
 
 async def post_text(text: str, context: ContextTypes.DEFAULT_TYPE):
@@ -180,6 +186,7 @@ async def post_text(text: str, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+# ====== Scheduled jobs ======
 async def job_morning(context: ContextTypes.DEFAULT_TYPE):
     idx = day_index_by_date() % len(POSTS["morning"])
     await post_text(POSTS["morning"][idx], context)
@@ -276,124 +283,20 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Рассылка отправлена {ok} участницам.")
 
 # ====== Application ======
-def main():
-    assert BOT_TOKEN, "Set BOT_TOKEN env var"
 
-    # Инициализация БД и загрузка постов
-    # (эти функции у тебя async, поэтому создадим краткий раннер)
-    import asyncio as _asyncio
-    _asyncio.run(init_db())
-    load_posts()
-
-    app: Application = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .rate_limiter(AIORateLimiter())
-        .build()
-    )
-
-    # Хэндлеры
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
-            STORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_story)],
-        },
-        fallbacks=[CommandHandler("start", start)],
-    )
-    app.add_handler(conv)
-    app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
-    app.add_handler(CommandHandler("broadcast", broadcast))
-
-    # Ежедневные посты
-    app.job_queue.run_daily(job_morning, time(hour=8, minute=0, tzinfo=TZ),   name="morning_post")
-    app.job_queue.run_daily(job_day,     time(hour=12, minute=0, tzinfo=TZ),  name="day_post")
-    app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
-
-    # ЕДИНСТВЕННЫЙ запуск polling (без asyncio.run вокруг)
-    app.run_polling(
-    allowed_updates=Update.ALL_TYPES,
-    drop_pending_updates=True,
-    stop_signals=None,
-    close_loop=False,  
-    )
-
-# ====== Application ======
-async def main():
-    assert BOT_TOKEN, "Set BOT_TOKEN env var"
-    await init_db()
-    load_posts()
-
-   app: Application = (
-    ApplicationBuilder()
-    .token(BOT_TOKEN)
-    .rate_limiter(AIORateLimiter())
-    .post_init(_post_init)        
-    .build()
-)
-
-app.run_polling(
-    allowed_updates=Update.ALL_TYPES,
-    drop_pending_updates=True,
-    stop_signals=None,
-    close_loop=False,
-)
-
-    # Хэндлеры
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
-            STORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_story)],
-        },
-        fallbacks=[CommandHandler("start", start)],
-    )
-    app.add_handler(conv)
-    app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
-    app.add_handler(CommandHandler("broadcast", broadcast))
-
-    # Расписание
-    app.job_queue.run_daily(job_morning, time(hour=8,  minute=0,  tzinfo=TZ), name="morning_post")
-    app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
-    app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
-
-    # ОДИН запуск polling. ВАЖНО: close_loop=False
-    await app.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,
-        stop_signals=None,
-        close_loop=False,
-    )
-
-# ====== Application ======
-
-# Асинхронная инициализация перед стартом polling
+# Асинхронная инициализация перед стартом polling (создание таблиц и пинг админам)
 async def _post_init(application: Application):
     await init_db()
-    # можно послать себе пинг-уведомление о старте (если хочешь):
     for admin_id in ADMIN_IDS:
         try:
             await application.bot.send_message(admin_id, "HUDEI HUDEI BOT запущен ✅")
         except Exception:
             pass
 
-# ====== Application ======
-
-# Асинхронная инициализация перед стартом polling
-async def _post_init(application: Application):
-    await init_db()
-    # можно послать себе пинг-уведомление о старте (если хочешь):
-    for admin_id in ADMIN_IDS:
-        try:
-            await application.bot.send_message(admin_id, "HUDEI HUDEI BOT запущен ✅")
-        except Exception:
-            pass
-
-
 def main():
     assert BOT_TOKEN, "Set BOT_TOKEN env var"
 
-    # Загружаем контент-план из posts.txt (синхронно)
+    # Загружаем контент-план из posts.txt
     load_posts()
 
     app: Application = (
@@ -404,7 +307,7 @@ def main():
         .build()
     )
 
-    # Хэндлеры
+    # Диалоги и команды
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -417,19 +320,18 @@ def main():
     app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
     app.add_handler(CommandHandler("broadcast", broadcast))
 
-    # Ежедневные посты в канал/подписчицам
+    # Расписание ежедневных постов
     app.job_queue.run_daily(job_morning, time(hour=8, minute=0, tzinfo=TZ), name="morning_post")
     app.job_queue.run_daily(job_day, time(hour=12, minute=0, tzinfo=TZ), name="day_post")
     app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
 
-    # Единственный корректный запуск polling
+    # Единственный корректный запуск polling (PTB сам управляет event loop)
     app.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True,
         stop_signals=None,
         close_loop=False,
     )
-
 
 if __name__ == "__main__":
     main()
