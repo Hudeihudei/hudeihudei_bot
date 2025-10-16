@@ -317,5 +317,84 @@ def main():
         stop_signals=None
     )
 
+# ====== Application ======
+async def main():
+    assert BOT_TOKEN, "Set BOT_TOKEN env var"
+    await init_db()
+    load_posts()
+
+    app: Application = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .rate_limiter(AIORateLimiter())
+        .build()
+    )
+
+    # Хэндлеры
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
+            STORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_story)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
+    app.add_handler(conv)
+    app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
+    app.add_handler(CommandHandler("broadcast", broadcast))
+
+    # Расписание
+    app.job_queue.run_daily(job_morning, time(hour=8,  minute=0,  tzinfo=TZ), name="morning_post")
+    app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
+    app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
+
+    # ОДИН запуск polling. ВАЖНО: close_loop=False
+    await app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+        stop_signals=None,
+        close_loop=False,
+    )
+
+# ====== Application ======
+async def main():
+    assert BOT_TOKEN, "Set BOT_TOKEN env var"
+    await init_db()
+    load_posts()
+
+    app: Application = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .rate_limiter(AIORateLimiter())
+        .build()
+    )
+
+    # Хэндлеры
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
+            STORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_story)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
+    app.add_handler(conv)
+    app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
+    app.add_handler(CommandHandler("broadcast", broadcast))
+
+    # Расписание
+    app.job_queue.run_daily(job_morning, time(hour=8,  minute=0,  tzinfo=TZ), name="morning_post")
+    app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
+    app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
+
+    # ОДИН запуск polling. ВАЖНО: close_loop=False
+    await app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+        stop_signals=None,
+        close_loop=False,
+    )
+
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
