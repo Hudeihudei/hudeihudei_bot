@@ -276,6 +276,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Рассылка отправлена {ok} участницам.")
 
 # ====== Application ======
+# ====== Application ======
 async def main():
     assert BOT_TOKEN, "Set BOT_TOKEN env var"
     await init_db()
@@ -300,11 +301,17 @@ async def main():
     app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
     app.add_handler(CommandHandler("broadcast", broadcast))
 
+    # Ежедневные посты
     app.job_queue.run_daily(job_morning, time(hour=8, minute=0, tzinfo=TZ), name="morning_post")
     app.job_queue.run_daily(job_day, time(hour=12, minute=0, tzinfo=TZ), name="day_post")
     app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
 
-    await app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True, stop_signals=None)
+    # Запуск polling
+    await app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+        stop_signals=None
+    )
 
 if __name__ == "__main__":
     try:
