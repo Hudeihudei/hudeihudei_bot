@@ -315,9 +315,8 @@ def main():
     allowed_updates=Update.ALL_TYPES,
     drop_pending_updates=True,
     stop_signals=None,
-    post_init=_post_init,
     close_loop=False,  
-   )
+    )
 
 # ====== Application ======
 async def main():
@@ -325,12 +324,20 @@ async def main():
     await init_db()
     load_posts()
 
-    app: Application = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .rate_limiter(AIORateLimiter())
-        .build()
-    )
+   app: Application = (
+    ApplicationBuilder()
+    .token(BOT_TOKEN)
+    .rate_limiter(AIORateLimiter())
+    .post_init(_post_init)        
+    .build()
+)
+
+app.run_polling(
+    allowed_updates=Update.ALL_TYPES,
+    drop_pending_updates=True,
+    stop_signals=None,
+    close_loop=False,
+)
 
     # Хэндлеры
     conv = ConversationHandler(
