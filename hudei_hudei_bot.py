@@ -27,6 +27,65 @@ from telegram.ext import (
     CommandHandler, MessageHandler, CallbackQueryHandler,
     ConversationHandler, ContextTypes, filters
 )
+# ---- ПАРСЕР posts.txt ----
+import re
+from datetime import datetime
+
+POSTS = {"morning": [], "day": [], "evening": []}
+
+def load_posts(path: str = "posts.txt"):
+    global POSTS
+    POSTS = {"morning": [], "day": [], "evening": []}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        blocks = re.split(r"^#\s*Day\s+\d+\s+(Morning|Day|Evening)\s*$", content, flags=re.MULTILINE)
+        for i in range(1, len(blocks), 2):
+            tag = blocks[i].strip().lower()
+            text = blocks[i+1].strip()
+            if tag in POSTS and text:
+                POSTS[tag].append(text)
+    except Exception as e:
+        log.error(f"Failed to load posts.txt: {e}")
+    for k in POSTS:
+        if not POSTS[k]:
+            POSTS[k] = [f"{k.title()} post placeholder. Добавь содержимое в posts.txt"]
+    log.info(f"Loaded posts: morning={len(POSTS['morning'])}, day={len(POSTS['day'])}, evening={len(POSTS['evening'])}")
+
+def day_index_by_date():
+    now = datetime.now(TZ)
+    first = datetime(now.year, now.month, 1, tzinfo=TZ)
+    return (now - first).days
+
+def target_chat_id_fallback():
+    return CHANNEL_ID  # если канал есть — туда пойдут посты
+
+async def post_text(text: str, context: ContextTypes.DEFAULT_TYPE):
+    chat = target_chat_id_fallback()
+    if chat:
+        try:
+            await context.bot.send_message(chat_id=chat, text=text)
+            return
+        except Exception as e:
+            log.error(f"Send to channel failed: {e}")
+    users = await get_subscribed_users()
+    for uid in users:
+        try:
+            await context.bot.send_message(chat_id=uid, text=text)
+        except Exception:
+            pass
+
+async def job_morning(context: ContextTypes.DEFAULT_TYPE):
+    idx = day_index_by_date() % len(POSTS["morning"])
+    await post_text(POSTS["morning"][idx], context)
+
+async def job_day(context: ContextTypes.DEFAULT_TYPE):
+    idx = day_index_by_date() % len(POSTS["day"])
+    await post_text(POSTS["day"][idx], context)
+
+async def job_evening(context: ContextTypes.DEFAULT_TYPE):
+    idx = day_index_by_date() % len(POSTS["evening"])
+    await post_text(POSTS["evening"][idx], context)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 log = logging.getLogger("hudei_bot")
@@ -196,14 +255,17 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Рассылка завершена ✅")
 
 async def main():
-    assert BOT_TOKEN, "⚠️ Переменная BOT_TOKEN не установлена!"
+    assert BOT_TOKEN, "Set BOT_TOKEN env var"
     await init_db()
-    app = ApplicationBuilder().token(BOT_TOKEN).rate_limiter(AIORateLimiter()).build()
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
-                STORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_story)]},
-        fallbacks=[CommandHandler("start", start)]
+
+    # Загружаем контент из posts.txt
+    load_posts()
+
+    app: Application = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .rate_limiter(AIORateLimiter())
+        .build()
     )
     app.add_handler(conv)
     app.add_handler(CommandHandler("rules", rules_cmd))
@@ -212,7 +274,9 @@ async def main():
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
     job_time = time(hour=19, minute=19, tzinfo=TZ)
-    app.job_queue.run_daily(job_evening, job_time, name="evening_post")
+    app.job_queue.run_daily(job_morning, time(hour=8,  minute=0,  tzinfo=TZ), name="morning_post")
+app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
+app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
     log.info("Bot starting…")
     await app.initialize()
     await app.start()
