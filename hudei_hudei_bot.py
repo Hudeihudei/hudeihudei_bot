@@ -275,14 +275,14 @@ async def main():
     app.add_handler(CallbackQueryHandler(approve_reject, pattern=r"^(approve|reject):"))
     job_time = time(hour=19, minute=19, tzinfo=TZ)
     app.job_queue.run_daily(job_morning, time(hour=8,  minute=0,  tzinfo=TZ), name="morning_post")
-app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
-app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
+    app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
+    app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
     log.info("Bot starting…")
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
     try:
-        await asyncio.Event().wait()
+    await asyncio.Event().wait()
     finally:
         await app.updater.stop()
         await app.stop()
