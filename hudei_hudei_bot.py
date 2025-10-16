@@ -312,10 +312,12 @@ def main():
 
     # ЕДИНСТВЕННЫЙ запуск polling (без asyncio.run вокруг)
     app.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,
-        stop_signals=None
-    )
+    allowed_updates=Update.ALL_TYPES,
+    drop_pending_updates=True,
+    stop_signals=None,
+    post_init=_post_init,
+    close_loop=False,  
+   )
 
 # ====== Application ======
 async def main():
