@@ -277,7 +277,7 @@ async def main():
     app.job_queue.run_daily(job_morning, time(hour=8,  minute=0,  tzinfo=TZ), name="morning_post")
     app.job_queue.run_daily(job_day,     time(hour=12, minute=0,  tzinfo=TZ), name="day_post")
     app.job_queue.run_daily(job_evening, time(hour=19, minute=19, tzinfo=TZ), name="evening_post")
-    log.info("Bot starting…")
+        log.info("Bot starting…")
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
